@@ -30,6 +30,24 @@ class Customer(object):
 
 		return output
 
+	def display(self):
+		print "---------------------"
+		print "Next Customer to call"
+		print "---------------------\n"
+		print self
+		print "\n"
+
+	def update_customer_called(self):
+
+		query = """UPDATE customers
+				   SET last_called = ?
+				   WHERE id = ?;"""
+		date = datetime.date.today()
+
+		DB.execute(query,(date,self.id))
+		CONN.commit()
+
+
 # Connect to the Database
 def connect_to_db():
 	global DB, CONN
@@ -44,34 +62,17 @@ def connect_to_db():
 # Remember: Our telemarketers should only be calling customers
 #           who have placed orders of 20 melons or more.
 def generate_list():
-
-	query1 = """CREATE VIEW OrdersOver20View AS 
-				SELECT * 
-			   	FROM 
-			   		(SELECT order_id, SUM(quantity) AS total_quantity 
-			   		FROM order_items 
-			   		GROUP BY order_id) 
-			   	WHERE total_quantity > 20;"""
-	DB.execute(query1)
-
-	query2 = """CREATE VIEW CustomerIDsOver20View AS 
-				SELECT ov.order_id, ov.total_quantity,o.customer_id 
-				FROM OrdersOver20View AS ov 
-				INNER JOIN orders AS o ON (ov.order_id=o.id);"""
-	DB.execute(query2)
-
-	query3 = """SELECT c.id, c.givenname, c.surname, c.telephone, c.last_called, COUNT(o.order_id) AS Orders_over_20 
-				FROM customers AS c 
-				INNER JOIN CustomerIDsOver20View AS o ON (c.id=o.customer_id) 
-				GROUP BY c.id;"""
-	DB.execute(query3)
+	query = """
+			SELECT DISTINCT c.id, c.givenname, c.surname, c.telephone, c.last_called
+			FROM customers AS c
+			INNER JOIN orders AS o ON (o.customer_id = c.id)
+			INNER JOIN order_items AS o_i ON (o_i.order_id = o.id)
+			GROUP BY o.id
+			HAVING SUM(o_i.quantity) >= 20
+			ORDER BY c.id ASC;
+			"""
+	DB.execute(query)
 	customer_rows = DB.fetchall()
-
-	query4 = """DROP VIEW OrdersOver20View""";
-	DB.execute(query4)
-
-	query5 = """DROP VIEW CustomerIDsOver20View""";
-	DB.execute(query5)
 
 	return customer_rows
 
@@ -92,26 +93,6 @@ def display_next_to_call(customer):
 
 # Update the "last called" column for the customer
 #   in the database.
-def update_customer_called(customer):
-
-	query = """UPDATE customers
-			   SET last_called = ?
-			   WHERE id = ?;"""
-	date = datetime.date.today()
-	customer_id = customer.id
-
-	DB.execute(query,(date,customer_id))
-	CONN.commit()
-
-	query2 = """SELECT *
-				FROM customers
-				WHERE id = ?;"""
-
-	DB.execute(query2,(customer_id,))
-	customer = DB.fetchall()
-
-	print customer
-
 def main():
 	connect_to_db()
 
@@ -121,13 +102,13 @@ def main():
 
 	while not done:
 		customer = get_next_customer(customer_rows)
-		display_next_to_call(customer)
+		customer.display()
 
 		print "Mark this customer as called?"
 		user_answer = raw_input('(y/n) > ')
 
 		if user_answer.lower() == 'y':
-			update_customer_called(customer)
+			customer.update_called()
 		else:
 			done = True
 
